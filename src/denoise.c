@@ -86,7 +86,7 @@ typedef struct {
 
 struct DenoiseState {
   float analysis_mem[FRAME_SIZE];
-  float cepstral_mem[][NB_BANDS];
+  float cepstral_mem[CEPS_MEM][NB_BANDS];
   int memid;
   float synthesis_mem[FRAME_SIZE];
   float pitch_buf[PITCH_BUF_SIZE];
