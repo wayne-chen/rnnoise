@@ -86,7 +86,7 @@ typedef struct {
 
 struct DenoiseState {
   float analysis_mem[FRAME_SIZE];
-  float cepstral_mem[CEPS_MEM][NB_BANDS];
+  float cepstral_mem[][NB_BANDS];
   int memid;
   float synthesis_mem[FRAME_SIZE];
   float pitch_buf[PITCH_BUF_SIZE];
@@ -377,9 +377,11 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     return 1;
   }
   dct(features, Ly);
+  // more seemingly magic numbers
   features[0] -= 12;
   features[1] -= 4;
   ceps_0 = st->cepstral_mem[st->memid];
+  // CEPS_MEM = 8
   ceps_1 = (st->memid < 1) ? st->cepstral_mem[CEPS_MEM+st->memid-1] : st->cepstral_mem[st->memid-1];
   ceps_2 = (st->memid < 2) ? st->cepstral_mem[CEPS_MEM+st->memid-2] : st->cepstral_mem[st->memid-2];
   for (i=0;i<NB_BANDS;i++) ceps_0[i] = features[i];
@@ -411,6 +413,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     spec_variability += mindist;
   }
   features[NB_BANDS+3*NB_DELTA_CEPS+1] = spec_variability/CEPS_MEM-2.1;
+  // make sure the energy doesn't pass 0.1 (aka ensure silent)
   return TRAINING && E < 0.1;
 }
 
@@ -437,6 +440,7 @@ static void biquad(float *y, float mem[2], const float *x, const float *b, const
 
 void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const float *Ep,
                   const float *Exp, const float *g) {
+  // Ep is p_b (wrt the paper)
   int i;
   float r[NB_BANDS];
   float rf[FREQ_SIZE] = {0};
