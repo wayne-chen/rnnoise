@@ -70,6 +70,7 @@
 extern const struct RNNModel rnnoise_model_orig;
 
 
+// are these Bark scale bands, like the ones described in the rnnoise demo paper?
 static const opus_int16 eband5ms[] = {
 /*0  200 400 600 800  1k 1.2 1.4 1.6  2k 2.4 2.8 3.2  4k 4.8 5.6 6.8  8k 9.6 12k 15.6 20k*/
   0,  1,  2,  3,  4,  5,  6,  7,  8, 10, 12, 14, 16, 20, 24, 28, 34, 40, 48, 60, 78, 100
@@ -122,6 +123,7 @@ void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
   }
 }
 
+// what does this "corr" stand for?
 void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P) {
   int i;
   float sum[NB_BANDS] = {0};
@@ -133,6 +135,7 @@ void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *
     for (j=0;j<band_size;j++) {
       float tmp;
       float frac = (float)j/band_size;
+      // correlation between the X and P signals
       tmp = X[(eband5ms[i]<<FRAME_SIZE_SHIFT) + j].r * P[(eband5ms[i]<<FRAME_SIZE_SHIFT) + j].r;
       tmp += X[(eband5ms[i]<<FRAME_SIZE_SHIFT) + j].i * P[(eband5ms[i]<<FRAME_SIZE_SHIFT) + j].i;
       sum[i] += (1-frac)*tmp;
@@ -174,6 +177,7 @@ static void check_init() {
   for (i=0;i<NB_BANDS;i++) {
     int j;
     for (j=0;j<NB_BANDS;j++) {
+      // computes the cosine transform coefficients for dct() function later on
       common.dct_table[i*NB_BANDS + j] = cos((i+.5)*j*M_PI/NB_BANDS);
       if (j==0) common.dct_table[i*NB_BANDS + j] *= sqrt(.5);
     }
@@ -190,6 +194,7 @@ static void dct(float *out, const float *in) {
     for (j=0;j<NB_BANDS;j++) {
       sum += in[j] * common.dct_table[j*NB_BANDS + i];
     }
+    // cosine transform for 1x22? aka 1xNB_BANDS
     out[i] = sum*sqrt(2./22);
   }
 }
@@ -322,8 +327,10 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   float tmp[NB_BANDS];
   float follow, logMax;
   frame_analysis(st, X, Ex, in);
+  // does this move the rnn to some state? or some value that gets used later somehow?
   RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE-FRAME_SIZE);
   RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE-FRAME_SIZE], in, FRAME_SIZE);
+  // clearly, pre gets used here?
   pre[0] = &st->pitch_buf[0];
   pitch_downsample(pre, pitch_buf, PITCH_BUF_SIZE, 1);
   pitch_search(pitch_buf+(PITCH_MAX_PERIOD>>1), pitch_buf, PITCH_FRAME_SIZE,
@@ -340,19 +347,28 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
   forward_transform(P, p);
   compute_band_energy(Ep, P);
   compute_band_corr(Exp, X, P);
+  // logarithmic scaling?
   for (i=0;i<NB_BANDS;i++) Exp[i] = Exp[i]/sqrt(.001+Ex[i]*Ep[i]);
+  // apply dct_table to Exp and output to tmp
   dct(tmp, Exp);
+  // magic numbers?
   for (i=0;i<NB_DELTA_CEPS;i++) features[NB_BANDS+2*NB_DELTA_CEPS+i] = tmp[i];
+  // more magic numbers?
   features[NB_BANDS+2*NB_DELTA_CEPS] -= 1.3;
   features[NB_BANDS+2*NB_DELTA_CEPS+1] -= 0.9;
   features[NB_BANDS+3*NB_DELTA_CEPS] = .01*(pitch_index-300);
   logMax = -2;
   follow = -2;
   for (i=0;i<NB_BANDS;i++) {
+    // log of energy of input
     Ly[i] = log10(1e-2+Ex[i]);
+    // take the max value
     Ly[i] = MAX16(logMax-7, MAX16(follow-1.5, Ly[i]));
+    //update the logMax value. shouldn't this be logMax-7?
     logMax = MAX16(logMax, Ly[i]);
+    // update the follow value
     follow = MAX16(follow-1.5, Ly[i]);
+    // accumulate energy
     E += Ex[i];
   }
   if (!TRAINING && E < 0.04) {
